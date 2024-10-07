@@ -1,0 +1,63 @@
+# Use Java 21 image as the base for most jobs
+image: openjdk:21-slim
+
+# Define the pipeline stages
+stages:
+  - build
+  - test
+  - package
+  - deploy
+  - run
+
+# Environment variables for Maven
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=.m2/repository"
+
+# Cache configuration to speed up subsequent builds
+cache:
+  paths:
+    - .m2/repository
+
+# Build stage: compile the project
+build:
+  stage: build
+  script:
+    - ./mvnw clean compile
+
+# Test stage: run unit tests
+test:
+  stage: test
+  script:
+    - ./mvnw test
+
+# Package stage: create the JAR file
+package:
+  stage: package
+  script:
+    - ./mvnw package
+  artifacts:
+    paths:
+      - target/*.jar
+
+# Deploy stage: build and push Docker image
+docker-build:
+  stage: deploy
+  image: docker:latest
+  services:
+    - docker:dind  # Docker-in-Docker to allow Docker usage in the job
+  script:
+    - docker build -t mowitnow-app .
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE:latest
+
+# Run stage: launch the application in a container
+run-app:
+  stage: run
+  image: docker:latest
+  services:
+    - docker:dind  # Docker-in-Docker to allow Docker usage in the job
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:latest
+    - docker run --name mowitnow-container -d -v $PWD/src/test/resources:/data $CI_REGISTRY_IMAGE:latest
+    - docker logs mowitnow-container
+  environment: production
